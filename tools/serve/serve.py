@@ -499,7 +499,7 @@ class ServerProc(object):
         self.proc = None
         self.daemon = None
         self.mp_context = mp_context
-        self.stop = mp_context.Event()
+        self.stop_flag = mp_context.Event()
         self.scheme = scheme
 
     def start(self, init_func, host, port, paths, routes, bind_address, config, log_handlers, **kwargs):
@@ -543,23 +543,19 @@ class ServerProc(object):
 
         if self.daemon:
             try:
-                self.daemon.start(block=False)
+                self.daemon.start()
                 try:
-                    self.stop.wait()
+                    self.stop_flag.wait()
+                    self.daemon.stop()
                 except KeyboardInterrupt:
-                    pass
+                    self.daemon.stop()
             except Exception:
                 logger.critical(traceback.format_exc())
                 raise
 
-    def wait(self):
-        self.stop.set()
-        self.proc.join()
-
-    def kill(self):
-        self.stop.set()
-        self.proc.terminate()
-        self.proc.join()
+    def stop(self, timeout=None):
+        self.stop_flag.set()
+        self.proc.join(timeout)
 
     def is_alive(self):
         return self.proc.is_alive()
@@ -602,7 +598,7 @@ def check_subdomains(logger, config, routes, mp_context, log_handlers):
             logger.critical("Failed probing domain {}. {}".format(domain, EDIT_HOSTS_HELP))
             sys.exit(1)
 
-    wrapper.wait()
+    wrapper.stop()
 
 
 def make_hosts_file(config, host):
@@ -748,14 +744,11 @@ class WebSocketDaemon(object):
         self.started = False
         self.server_thread = None
 
-    def start(self, block=False):
+    def start(self):
         self.started = True
-        if block:
-            self.server.serve_forever()
-        else:
-            self.server_thread = threading.Thread(target=self.server.serve_forever)
-            self.server_thread.setDaemon(True)  # don't hang on exit
-            self.server_thread.start()
+        self.server_thread = threading.Thread(target=self.server.serve_forever)
+        self.server_thread.setDaemon(True)  # don't hang on exit
+        self.server_thread.start()
 
     def stop(self):
         """
@@ -817,28 +810,25 @@ class QuicTransportDaemon(object):
         self.command = args
         self.proc = None
 
-    def start(self, block=False):
-        if block:
-            subprocess.call(self.command)
-        else:
-            def handle_signal(*_):
-                if self.proc:
-                    try:
-                        self.proc.terminate()
-                    except OSError:
-                        # It's fine if the child already exits.
-                        pass
-                    self.proc.wait()
-                sys.exit(0)
+    def start(self):
+        def handle_signal(*_):
+            if self.proc:
+                try:
+                    self.proc.terminate()
+                except OSError:
+                    # It's fine if the child already exits.
+                    pass
+                self.proc.wait()
+            sys.exit(0)
 
-            signal.signal(signal.SIGTERM, handle_signal)
-            signal.signal(signal.SIGINT, handle_signal)
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
 
-            self.proc = subprocess.Popen(self.command)
-            # Give the server a second to start and then check.
-            time.sleep(1)
-            if self.proc.poll():
-                sys.exit(1)
+        self.proc = subprocess.Popen(self.command)
+        # Give the server a second to start and then check.
+        time.sleep(1)
+        if self.proc.poll():
+            sys.exit(1)
 
 
 def start_quic_transport_server(logger, host, port, paths, routes, bind_address, config, **kwargs):
@@ -866,10 +856,10 @@ def start(logger, config, routes, mp_context, log_handlers, **kwargs):
     return servers
 
 
-def iter_procs(servers):
+def iter_servers(servers):
     for servers in servers.values():
         for port, server in servers:
-            yield server.proc
+            yield server
 
 
 def _make_subdomains_product(s, depth=2):
@@ -1084,10 +1074,6 @@ def run(config_cls=ConfigBuilder, route_builder=None, mp_context=None, log_handl
         # This sets the right log level
         logger = get_logger(config.log_level, log_handlers)
 
-        def handle_signal(signum, frame):
-            logger.debug("Received signal %s. Shutting down.", signum)
-            received_signal.set()
-
         bind_address = config["bind_address"]
 
         if kwargs.get("alias_file"):
@@ -1113,24 +1099,28 @@ def run(config_cls=ConfigBuilder, route_builder=None, mp_context=None, log_handl
 
         with stash.StashServer(stash_address, authkey=str(uuid.uuid4())):
             servers = start(logger, config, routes, mp_context, log_handlers, **kwargs)
-            signal.signal(signal.SIGTERM, handle_signal)
-            signal.signal(signal.SIGINT, handle_signal)
 
-            while (all(subproc.is_alive() for subproc in iter_procs(servers)) and
-                   not received_signal.is_set() and not kwargs["exit_after_start"]):
-                for subproc in iter_procs(servers):
-                    subproc.join(1)
+            try:
+                while (all(server.proc.is_alive() for server in iter_servers(servers)) and
+                       not kwargs["exit_after_start"]):
+                    for server in iter_servers(servers):
+                        server.proc.join(1)
+            except KeyboardInterrupt:
+                pass
 
             failed_subproc = 0
-            for subproc in iter_procs(servers):
+            for server in iter_servers(servers):
+                subproc = server.proc
                 if subproc.is_alive():
-                    logger.info('Status of subprocess "%s": running' % subproc.name)
+                    logger.info('Status of subprocess "%s": running', subproc.name)
+                    server.stop(timeout=1)
+
+                if server.proc.exitcode == 0:
+                    logger.info('Status of subprocess "%s": exited correctly', subproc.name)
                 else:
-                    if subproc.exitcode == 0:
-                        logger.info('Status of subprocess "%s": exited correctly' % subproc.name)
-                    else:
-                        logger.warning('Status of subprocess "%s": failed. Exit with non-zero status: %d' % (subproc.name, subproc.exitcode))
-                        failed_subproc += 1
+                    logger.warning('Status of subprocess "%s": failed. Exit with non-zero status: %d',
+                                   subproc.name, subproc.exitcode)_
+                    failed_subproc += 1
             return failed_subproc
 
 
