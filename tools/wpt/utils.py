@@ -9,19 +9,13 @@ import time
 import zipfile
 from io import BytesIO
 from socket import error as SocketError  # NOQA: N812
+from typing import Any, Callable, Dict
 from urllib.request import urlopen
-
-MYPY = False
-if MYPY:
-    from typing import Any
-    from typing import Callable
-    from typing import Dict
 
 logger = logging.getLogger(__name__)
 
 
-class Kwargs(dict):
-    # type: Dict[Any, Any]
+class Kwargs(Dict[Any, Any]):
     def set_if_none(self,
                     name,            # type: str
                     value,           # type: Any

@@ -321,6 +321,7 @@ class PrintRefTest(RefTest):
         return self._extras.get("page_ranges", {})
 
     def to_json(self):  # type: ignore
+        # type: () -> Tuple[Optional[Text], List[Tuple[Text, Text]], Dict[Text, Any]]
         rv = super(PrintRefTest, self).to_json()
         if self.page_ranges:
             rv[-1]["page_ranges"] = self.page_ranges

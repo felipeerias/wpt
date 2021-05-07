@@ -21,6 +21,7 @@ import urllib
 import uuid
 from collections import defaultdict, OrderedDict
 from itertools import chain, product
+from typing import Any, List, Optional
 
 from localpaths import repo_root
 
@@ -62,7 +63,7 @@ class WrapperHandler(object):
 
     __meta__ = abc.ABCMeta
 
-    headers = []
+    headers: List[Any] = []
 
     def __init__(self, base_path=None, url_base="/"):
         self.base_path = base_path
@@ -180,7 +181,7 @@ class WrapperHandler(object):
 
 
 class HtmlWrapperHandler(WrapperHandler):
-    global_type = None
+    global_type: Optional[str] = None
     headers = [('Content-Type', 'text/html')]
 
     def check_exposure(self, request):
@@ -990,7 +991,7 @@ class ConfigBuilder(config.ConfigBuilder):
     def ws_doc_root(self, v):
         self._ws_doc_root = v
 
-    ws_doc_root = property(None, ws_doc_root)
+    ws_doc_root = property(None, ws_doc_root)  # type: ignore
 
     def _get_paths(self, data):
         rv = super(ConfigBuilder, self)._get_paths(data)

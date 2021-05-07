@@ -29,7 +29,7 @@ try:
 except ImportError:
     from xml.etree import ElementTree as ElementTree  # type: ignore
 
-import html5lib
+import html5lib  # type: ignore
 
 from . import XMLParser
 from .item import (ConformanceCheckerTest,
