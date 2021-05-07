@@ -170,7 +170,7 @@ const invariants = {
 // Given a resource-loader, a path (a relative path or absolute URL), and a
 // PerformanceResourceTiming validator, applies the loader to the resource path
 // and applies the validator to the resulting PerformanceResourceTiming entry.
-const attribute_test = (loader, path, validate, test_label) => {
+const attribute_test = (loader, path, run_test, test_label, optional_validator) => {
   promise_test(
     async () => {
       let loaded_entry = new Promise((resolve, reject) => {
@@ -189,8 +189,8 @@ const attribute_test = (loader, path, validate, test_label) => {
         }).observe({"type": "resource"});
       });
 
-      await loader(path);
+      await loader(path, optional_validator);
       const entry = await(loaded_entry);
-      validate(entry);
+      run_test(entry);
   }, test_label);
 }
