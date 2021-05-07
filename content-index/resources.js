@@ -38,3 +38,18 @@ async function waitForMessageFromServiceWorker() {
     navigator.serviceWorker.addEventListener('message', listener);
   });
 }
+
+// Returns if the chromium based browser fetches icons for content-index.
+async function fetchesIconsChromium() {
+  const {fetchesIcons} = await import('/resources/chromium/content-index-helpers.js');
+  return fetchesIcons();
+}
+
+// Returns if the browser fetches icons for content-index and should therefore
+// validate them.
+function fetchesIcons() {
+  if (isChromiumBased) {
+    return fetchesIconsChromium();
+  }
+  return false;
+}
