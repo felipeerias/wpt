@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from urllib.request import urlopen
 
 try:
-    import zstandard  # type: ignore
+    import zstandard
 except ImportError:
     zstandard = None
 
